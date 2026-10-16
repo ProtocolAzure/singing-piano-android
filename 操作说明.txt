@@ -1,0 +1,17 @@
+安卓练声器 APK 工程（基于 V3.3 的安卓触屏版）
+
+当前提供的是 Android Studio 工程，不是已经编译好的 APK。
+本环境没有安卓 SDK / Gradle，因此没有声称已进行真机编译。
+
+1. Windows 电脑安装 Android Studio（从 developer.android.com/studio 官方获取）。首次启动按提示安装 Android SDK。
+2. 解压本工程到一个文件夹。
+3. 若要保留你的真实 Yamaha C5 音源，在电脑安装 Python 3（如果没有），双击或用命令运行「导入我的Yamaha音源.py」。在文件对话框选择原来约 6.5 MB、已经能发声的 V3.3 真实钢琴 HTML。
+   不想安装 Python？可手动编辑 app/src/main/assets/index.html，找到 __SAMPLE_DATA__，粘贴你原真实 HTML 中 const SAMPLE_DATA = 后面到 ;const sampleCache 前的 JSON 数据。
+4. 用 Android Studio -> Open 打开本工程根目录。等待 Gradle Sync 完成。项目没有捆绑 Gradle wrapper，需在 Android Studio 的 Gradle 设置中指定已安装的 Gradle 8.9 或使用其向导配置 Gradle 发行版；Gradle / SDK 首次准备需要联网，之后不需要网站托管。
+5. 菜单 Build -> Build Bundle(s) / APK(s) -> Build APK(s)。生成 debug APK 通常位于 app/build/outputs/apk/debug/app-debug.apk。
+6. 把 APK 发到安卓手机，允许从该来源安装未知应用，再启动。首次点击测音，应出现安卓麦克风权限提示。
+7. 关闭网络再验证音源和测音。手机系统 WebView 需正常安装、启用。
+
+隐私：本工程不包含网络访问权限，麦克风分析留在本机。不录音、不上传。
+安全：仅对固定 https://appassets.androidplatform.net/index.html 响应本地资源，拒绝额外音频资源的授权。
+注意：未实机验证，不保证所有安卓设备的 WebView 支持 getUserMedia。首次遇到问题可更新 Android System WebView。
