@@ -1,0 +1,19 @@
+workflows:
+  singing-piano-debug:
+    name: Singing Piano Android Debug APK
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      java: 17
+    scripts:
+      - name: Configure Android SDK
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/local.properties"
+      - name: Build installable debug APK
+        script: |
+          set -e
+          curl -fLsS https://services.gradle.org/distributions/gradle-8.9-bin.zip -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /tmp
+          /tmp/gradle-8.9/bin/gradle --no-daemon :app:assembleDebug
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
