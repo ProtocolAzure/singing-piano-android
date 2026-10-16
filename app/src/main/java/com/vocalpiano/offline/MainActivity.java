@@ -94,3 +94,43 @@ public class MainActivity extends Activity {
                         status("正在请求安卓系统麦克风权限");
                         requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MIC_REQUEST);
                     }
+  });
+            }
+            @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+                runOnUiThread(() -> {
+                    if (pendingRequest == request) pendingRequest = null;
+                    status("网页取消麦克风请求");
+                });
+            }
+            @Override public boolean onConsoleMessage(ConsoleMessage message) {
+                Log.d(TAG, "JS " + message.messageLevel() + " " + message.message() + " @" + message.lineNumber());
+                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
+                    status("网页脚本错误：" + message.message());
+                }
+                return true;
+            }
+        });
+        web.loadUrl(ORIGIN + "/index.html");
+    }
+
+    @Override public void onRequestPermissionsResult(int req, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(req, permissions, results);
+        if (req == MIC_REQUEST && pendingRequest != null) {
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+                status("系统已授权，向网页授予麦克风");
+                pendingRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
+            } else {
+                status("安卓系统拒绝麦克风权限");
+                pendingRequest.deny();
+            }
+            pendingRequest = null;
+        }
+    }
+    @Override protected void onDestroy() {
+        if (pendingRequest != null) { pendingRequest.deny(); pendingRequest = null; }
+        web.destroy();
+        super.onDestroy();
+    }
+}
+
+                              
