@@ -151,20 +151,255 @@ function drawKeyboard(){
   key.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse'&&e.button!==0)return;sound(m,.6);$('status').innerHTML='试听 <strong>'+midiName(m)+'</strong>'});host.append(key);
  }
 }
+
 function paintKeys(){const scaleSet=new Set(patterns[$('scale').value].map(x=>(Number($('root').value)+x)%12)),exerciseSet=new Set(basic());document.querySelectorAll('[data-midi]').forEach(k=>{const m=Number(k.dataset.midi);k.classList.toggle('scale',$('alltones').checked&&scaleSet.has(m%12));k.classList.toggle('exercise',exerciseSet.has(m));k.classList.toggle('tonic',scaleSet.has(m%12)&&m%12===Number($('root').value));k.classList.toggle('active',m===active);k.querySelector('.key-label').style.display=$('names').checked?'':'none';const d=k.querySelector('.key-degree');d.textContent=scaleSet.has(m%12)?numbered(m).replace(/[̣̇]/g,''):'';d.style.display=$('jianpu').checked?'':'none'})}
+
 function numbered(m){let difference=m-rootMidi(),degree=((difference%12)+12)%12;let map={0:'1',1:'♯1',2:'2',3:'♭3',4:'3',5:'4',6:'♯4',7:'5',8:'♭6',9:'6',10:'♭7',11:'7'};let oct=Math.floor(difference/12);return (map[degree]||'?')+(oct>0?'̇'.repeat(oct):oct<0?'̣'.repeat(-oct):'')}
+
 const descriptions={major:'自然大调：Do Re Mi Fa Sol La Si Do，间隔为全全半全全全半。',minor:'自然小调：1 2 ♭3 4 5 ♭6 ♭7，常见于很多抒情旋律。',pentatonic:'大调五声音阶：1 2 3 5 6，避开 4 和 7。',chromatic:'半音阶：每次移动一个半音，十二个位置全部经过。',triad:'大三和弦分解：把 1、3、5 分开演奏，不是完整音阶。'};
+
 function refresh(){stop();const scaleSet=new Set(patterns[$('scale').value].map(x=>((Number($('root').value)+x)%12))),exerciseSet=new Set(basic());paintKeys();$('scaleHelp').textContent=descriptions[$('scale').value];$('sequence').innerHTML='';for(const m of notes()){const n=document.createElement('span');n.className='notechip';n.dataset.seq=m;n.textContent=$('jianpu').checked?numbered(m)+' · '+midiName(m):midiName(m);n.title=midiName(m);$('sequence').append(n)}const visibleMin=$('freeScroll').checked?Number($('viewStart').value):keyboardStart,visibleMax=$('freeScroll').checked?Math.min(MAX_MIDI,visibleMin+wantedCount()*2):keyboardEnd;const invisible=basic().filter(m=>m<visibleMin||m>visibleMax);$('status').textContent='已选择 '+names[Number($('root').value)]+' · '+$('scale').selectedOptions[0].text+' · 共 '+notes().length+' 个音符'+(invisible.length?'；其中 '+invisible.length+' 个音超出当前显示范围（仍可播放），可切换键盘音区':'')+(basic().some(m=>m<36||m>96)?'；注意：部分音超出 C2–C7 目标范围':'')}
+
 function stop(){token++;playing=false;if(timer)clearTimeout(timer);timer=null;$('play').textContent='▶ 播放音阶';setActive(-1);for(let o of [...voices]){try{o.stop()}catch(e){}}voices.clear()}
+
 function play(){stop();if(!ensure())return;playing=true;$('play').textContent='❚❚ 暂停 / 停止';const mine=token,ns=notes(),bpm=Math.max(30,Math.min(240,Number($('bpm').value)||80)),ms=60000/bpm;let idx=0;function tick(){if(!playing||mine!==token)return;if(idx>=ns.length){if($('loop').checked){idx=0}else{playing=false;$('play').textContent='▶ 播放音阶';$('status').textContent='播放完成';setActive(-1);return}}let m=ns[idx++];sound(m,Math.min(ms/1000*.90,1.4));$('status').innerHTML='正在播放 <strong>'+midiName(m)+'</strong>　'+idx+' / '+ns.length;timer=setTimeout(tick,ms)}tick()}
-$('play').onclick=()=>playing?stop():play();$('stop').onclick=stop;$('rootplay').onclick=()=>sound(rootMidi(),.9);for(let id of ['root','scale','oct','direction','names','jianpu','alltones'])$(id).addEventListener('change',refresh);for(let id of ['bpm','wave'])$(id).addEventListener('change',stop);
-$('viewStart').addEventListener('change',()=>locate());$('recenter').addEventListener('click',locate);['autoView','freeScroll','octCount'].forEach(id=>$(id).addEventListener('change',()=>applyLayout(false)));if('ResizeObserver' in window){resizeObserver=new ResizeObserver(()=>applyLayout(false));resizeObserver.observe(viewport)}else window.addEventListener('resize',()=>applyLayout(false));window.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName))return;if(e.code==='Space'){e.preventDefault();playing?stop():play();return}let i=['KeyA','KeyS','KeyD','KeyF','KeyG','KeyH','KeyJ','KeyK'].indexOf(e.code);if(i>=0&&!e.repeat){let n=basic();sound(n[i%n.length],.45)}});let micStream=null,micAnalyser=null,micBuffer=null,micRun=false,micRAF=0,micSilentSince=0,micHistory=[],micContext=null;
-function clearPitch(){ $('pitchName').textContent='—';$('pitchHz').textContent='等待声音';$('pitchCents').textContent='—';$('pitchNeedle').style.left='50%'}
-function detectPitch(x,sampleRate){let rms=0;for(let i=0;i<x.length;i++)rms+=x[i]*x[i];rms=Math.sqrt(rms/x.length);if(rms<.012)return null;const minLag=Math.floor(sampleRate/1500),maxLag=Math.min(Math.floor(sampleRate/65),Math.floor(x.length/2));let best=Infinity,bestLag=0;const half=Math.floor(x.length/2);for(let lag=minLag;lag<=maxLag;lag++){let diff=0;for(let i=0;i<half;i+=2){const v=x[i]-x[i+lag];diff+=v*v}if(diff<best){best=diff;bestLag=lag}}if(!bestLag)return null;const norm=best/(half/2*rms*rms*2);if(norm>.43)return null;let refined=bestLag;if(bestLag>minLag&&bestLag<maxLag){const score=lag=>{let d=0;for(let i=0;i<half;i+=2){let v=x[i]-x[i+lag];d+=v*v}return d};const a=score(bestLag-1),b=best,c=score(bestLag+1),den=a-2*b+c;if(Math.abs(den)>1e-8)refined+=Math.max(-.5,Math.min(.5,.5*(a-c)/den))}return sampleRate/refined}
-function micFrame(){if(!micRun)return;micAnalyser.getFloatTimeDomainData(micBuffer);const freq=detectPitch(micBuffer,micContext.sampleRate);if(freq){const midi=69+12*Math.log2(freq/440);micHistory.push(midi);if(micHistory.length>4)micHistory.shift();const sorted=[...micHistory].sort((a,b)=>a-b),smooth=sorted[Math.floor(sorted.length/2)];const nearest=Math.round(smooth),cents=Math.round((smooth-nearest)*100),hz=440*Math.pow(2,(smooth-69)/12);$('pitchName').textContent=midiName(nearest);$('pitchHz').textContent=hz.toFixed(1)+' Hz';$('pitchCents').textContent=(cents>0?'+':'')+cents+' 音分';$('pitchNeedle').style.left=Math.max(0,Math.min(100,50+cents))+'%';micSilentSince=performance.now()}else if(performance.now()-micSilentSince>170){micHistory=[];clearPitch()}micRAF=requestAnimationFrame(micFrame)}
-$('micStart').onclick=async()=>{if(!navigator.mediaDevices?.getUserMedia){$('micStatus').textContent='此浏览器或本地文件环境不允许麦克风；可改用 localhost / HTTPS 打开。';return}try{micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});const AC=window.AudioContext||window.webkitAudioContext;micContext=new AC();await micContext.resume();const src=micContext.createMediaStreamSource(micStream);micAnalyser=micContext.createAnalyser();micAnalyser.fftSize=4096;src.connect(micAnalyser);micBuffer=new Float32Array(micAnalyser.fftSize);micSilentSince=performance.now();micRun=true;$('micStart').disabled=true;$('micStop').disabled=false;$('micStatus').textContent='正在本地监听（未录音）';micFrame()}catch(e){$('micStatus').textContent='麦克风未启动：'+e.message+'。请检查浏览器权限；本地文件可能需 HTTPS 或 localhost。'}};
-$('micStop').onclick=async()=>{micRun=false;cancelAnimationFrame(micRAF);if(micStream)micStream.getTracks().forEach(t=>t.stop());micStream=null;if(micContext)await micContext.close();micContext=null;micHistory=[];clearPitch();$('micStart').disabled=false;$('micStop').disabled=true;$('micStatus').textContent='麦克风已关闭'};
-if(!Object.keys(SAMPLE_DATA).length){ const opt=document.querySelector('#wave option[value=real]');if(opt){opt.textContent='真实钢琴（尚未导入音源，临时合成试听）';} $('status').textContent='测试版：尚未导入 Yamaha 真实录音；钢琴可用临时合成音试听，麦克风检测可以独立测试。';}
-applyLayout(true);refresh();
+
+$('play').onclick=()=>playing?stop():play();
+$('stop').onclick=stop;
+$('rootplay').onclick=()=>sound(rootMidi(),.9);
+
+for(let id of ['root','scale','oct','direction','names','jianpu','alltones'])$(id).addEventListener('change',refresh);
+for(let id of ['bpm','wave'])$(id).addEventListener('change',stop);
+
+$('viewStart').addEventListener('change',()=>locate());
+$('recenter').addEventListener('click',locate);
+['autoView','freeScroll','octCount'].forEach(id=>$(id).addEventListener('change',()=>applyLayout(false)));
+
+if('ResizeObserver' in window){
+  resizeObserver=new ResizeObserver(()=>applyLayout(false));
+  resizeObserver.observe(viewport);
+}else{
+  window.addEventListener('resize',()=>applyLayout(false));
+}
+
+window.addEventListener('keydown',e=>{
+  if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName))return;
+  if(e.code==='Space'){
+    e.preventDefault();
+    playing?stop():play();
+    return;
+  }
+  let i=['KeyA','KeyS','KeyD','KeyF','KeyG','KeyH','KeyJ','KeyK'].indexOf(e.code);
+  if(i>=0&&!e.repeat){
+    let n=basic();
+    sound(n[i%n.length],.45);
+  }
+});
+
+let micStream=null,micAnalyser=null,micBuffer=null,micRun=false,micRAF=0,micSilentSince=0,micHistory=[],micContext=null;
+
+function clearPitch(){
+  $('pitchName').textContent='—';
+  $('pitchHz').textContent='等待声音';
+  $('pitchCents').textContent='—';
+  $('pitchNeedle').style.left='50%';
+}
+
+function detectPitch(x,sampleRate){
+  let rms=0;
+  for(let i=0;i<x.length;i++)rms+=x[i]*x[i];
+  rms=Math.sqrt(rms/x.length);
+  if(rms<.012)return null;
+  const minLag=Math.floor(sampleRate/1500),maxLag=Math.min(Math.floor(sampleRate/65),Math.floor(x.length/2));
+  let best=Infinity,bestLag=0;
+  const half=Math.floor(x.length/2);
+  for(let lag=minLag;lag<=maxLag;lag++){
+    let diff=0;
+    for(let i=0;i<half;i+=2){
+      const v=x[i]-x[i+lag];
+      diff+=v*v;
+    }
+    if(diff<best){best=diff;bestLag=lag}
+  }
+  if(!bestLag)return null;
+  const norm=best/(half/2*rms*rms*2);
+  if(norm>.43)return null;
+  let refined=bestLag;
+  if(bestLag>minLag&&bestLag<maxLag){
+    const score=lag=>{
+      let d=0;
+      for(let i=0;i<half;i+=2){
+        let v=x[i]-x[i+lag];
+        d+=v*v;
+      }
+      return d;
+    };
+    const a=score(bestLag-1),b=best,c=score(bestLag+1),den=a-2*b+c;
+    if(Math.abs(den)>1e-8)refined+=Math.max(-.5,Math.min(.5,.5*(a-c)/den));
+  }
+  return sampleRate/refined;
+}
+
+function micFrame(){
+  if(!micRun)return;
+  micAnalyser.getFloatTimeDomainData(micBuffer);
+  const freq=detectPitch(micBuffer,micContext.sampleRate);
+  if(freq){
+    const midi=69+12*Math.log2(freq/440);
+    micHistory.push(midi);
+    if(micHistory.length>4)micHistory.shift();
+    const sorted=[...micHistory].sort((a,b)=>a-b),smooth=sorted[Math.floor(sorted.length/2)];
+    const nearest=Math.round(smooth),cents=Math.round((smooth-nearest)*100),hz=440*Math.pow(2,(smooth-69)/12);
+    $('pitchName').textContent=midiName(nearest);
+    $('pitchHz').textContent=hz.toFixed(1)+' Hz';
+    $('pitchCents').textContent=(cents>0?'+':'')+cents+' 音分';
+    $('pitchNeedle').style.left=Math.max(0,Math.min(100,50+cents))+'%';
+    micSilentSince=performance.now();
+  }else if(performance.now()-micSilentSince>170){
+    micHistory=[];
+    clearPitch();
+  }
+  micRAF=requestAnimationFrame(micFrame);
+}
+
+/* V1.3 安卓原生麦克风测音 */
+let lastNativePitch=0;
+
+window.nativeMicStarted=()=>{
+  micRun=true;
+  micHistory=[];
+  micSilentSince=performance.now();
+  lastNativePitch=performance.now();
+  $('micStart').disabled=true;
+  $('micStop').disabled=false;
+  $('micStatus').textContent='安卓原生麦克风已连接（不保存录音）';
+};
+
+window.nativeMicError=(message)=>{
+  micRun=false;
+  micHistory=[];
+  clearPitch();
+  $('micStart').disabled=false;
+  $('micStop').disabled=true;
+  $('micStatus').textContent='原生麦克风失败：'+message;
+};
+
+window.nativeMicStopped=()=>{
+  micRun=false;
+  micHistory=[];
+  clearPitch();
+  $('micStart').disabled=false;
+  $('micStop').disabled=true;
+  $('micStatus').textContent='麦克风已停止';
+};
+
+window.nativeMicData=(freq,level)=>{
+  if(!micRun)return;
+
+  $('micStatus').textContent=
+    '输入强度 '+Number(level).toFixed(3)+' · 安卓原生采集';
+
+  if(Number(freq)>0){
+    const midi=69+12*Math.log2(Number(freq)/440);
+    micHistory.push(midi);
+    if(micHistory.length>3)micHistory.shift();
+
+    const sorted=[...micHistory].sort((a,b)=>a-b);
+    const smooth=sorted[Math.floor(sorted.length/2)];
+    const nearest=Math.round(smooth);
+    const cents=Math.round((smooth-nearest)*100);
+    const hz=440*Math.pow(2,(smooth-69)/12);
+
+    $('pitchName').textContent=midiName(nearest);
+    $('pitchHz').textContent=hz.toFixed(1)+' Hz';
+    $('pitchCents').textContent=(cents>0?'+':'')+cents+' 音分';
+    $('pitchNeedle').style.left=
+      Math.max(0,Math.min(100,50+cents))+'%';
+
+    lastNativePitch=performance.now();
+  }else if(performance.now()-lastNativePitch>180){
+    micHistory=[];
+    clearPitch();
+  }
+};
+
+$('micStart').onclick=async()=>{
+  if(window.AndroidMic&&typeof window.AndroidMic.start==='function'){
+    $('micStatus').textContent='请求安卓原生麦克风…';
+    window.AndroidMic.start();
+    return;
+  }
+
+  if(!navigator.mediaDevices?.getUserMedia){
+    $('micStatus').textContent='当前浏览器环境无法访问麦克风，请使用 HTTPS 或受支持的浏览器。';
+    return;
+  }
+
+  try{
+    micStream=await navigator.mediaDevices.getUserMedia({
+      audio:{
+        echoCancellation:false,
+        noiseSuppression:false,
+        autoGainControl:false
+      }
+    });
+    const AC=window.AudioContext||window.webkitAudioContext;
+    micContext=new AC();
+    await micContext.resume();
+
+    const src=micContext.createMediaStreamSource(micStream);
+    micAnalyser=micContext.createAnalyser();
+    micAnalyser.fftSize=4096;
+    src.connect(micAnalyser);
+
+    micBuffer=new Float32Array(micAnalyser.fftSize);
+    micSilentSince=performance.now();
+    micRun=true;
+
+    $('micStart').disabled=true;
+    $('micStop').disabled=false;
+    $('micStatus').textContent='正在本地监听（未录音）';
+
+    micFrame();
+  }catch(e){
+    $('micStatus').textContent='麦克风未启动：'+e.name+'：'+e.message;
+  }
+};
+
+$('micStop').onclick=async()=>{
+  if(window.AndroidMic&&typeof window.AndroidMic.stop==='function'){
+    window.AndroidMic.stop();
+    return;
+  }
+
+  micRun=false;
+  cancelAnimationFrame(micRAF);
+
+  if(micStream){
+    micStream.getTracks().forEach(track=>track.stop());
+  }
+  micStream=null;
+
+  if(micContext)await micContext.close();
+  micContext=null;
+  micHistory=[];
+  clearPitch();
+
+  $('micStart').disabled=false;
+  $('micStop').disabled=true;
+  $('micStatus').textContent='麦克风已关闭';
+};
+
+if(!Object.keys(SAMPLE_DATA).length){
+  const opt=document.querySelector('#wave option[value=real]');
+  if(opt){
+    opt.textContent='真实钢琴（尚未导入音源，临时合成试听）';
+  }
+  $('status').textContent='测试版：尚未导入 Yamaha 真实录音；钢琴可用临时合成音试听，麦克风检测可以独立测试。';
+}
+
+applyLayout(true);
+refresh();
 })();
 </script></body></html>
+
