@@ -147,8 +147,10 @@ public class MainActivity extends Activity {
                 for (int i=0; i<n; i++) { samples[i]=pcm[i]/32768f; rms+=samples[i]*samples[i]; }
                 rms = Math.sqrt(rms/n);
                 double hz = rms < 0.012 ? 0 : detectPitch(samples, n);
-                final double f = hz, level = rms;
-                sendJs("window.nativeMicData && window.nativeMicData("+f+","+level+")");
+                // LPC formant estimate is most interpretable for steady, lower-pitched vowels.
+                double f1 = (hz >= 65 && hz <= 350 && rms >= 0.022) ? estimateF1(samples, n) : 0;
+                final double f = hz, level = rms, formant = f1;
+                sendJs("window.nativeMicData && window.nativeMicData("+f+","+level+","+formant+")");
             }
         } catch (Exception e) { if (recording) micError("麦克风读取异常："+e.getMessage()); }
         finally { if (recording) runOnUiThread(() -> stopMic()); }
@@ -182,6 +184,61 @@ public class MainActivity extends Activity {
         }
         double hz = SAMPLE_RATE/lag;
         return hz>=65 && hz<=1400 ? hz : 0;
+    }
+
+    // Exploratory first formant estimate via LPC spectral envelope.
+    // Not laboratory-grade formant tracking. Returns 0 when no convincing peak is detected.
+    private static double estimateF1(float[] input, int count) {
+        final int n = Math.min(2048, count);
+        final int p = 18;
+        if (n < 512) return 0;
+        double[] x = new double[n];
+        int offset = count - n;
+        double prev = (offset > 0) ? input[offset - 1] : 0;
+        for (int i=0; i<n; i++) {
+            double current=input[offset+i];
+            x[i]=(current-0.96*prev)*(0.54-0.46*Math.cos(2*Math.PI*i/(n-1)));
+            prev=current;
+        }
+        double[] r = new double[p+1];
+        for (int k=0; k<=p; k++) {
+            double sum=0;
+            for(int i=k;i<n;i++)sum+=x[i]*x[i-k];
+            r[k]=sum;
+        }
+        if (r[0]<1e-6) return 0;
+        double[] a = new double[p+1];
+        a[0]=1;
+        double energy=r[0];
+        for(int i=1;i<=p;i++){
+            double acc=r[i];
+            for(int k=1;k<i;k++)acc+=a[k]*r[i-k];
+            double reflection=-acc/energy;
+            if(!Double.isFinite(reflection)||Math.abs(reflection)>=0.999)return 0;
+            double[] next=a.clone();
+            for(int k=1;k<i;k++)next[k]=a[k]+reflection*a[i-k];
+            next[i]=reflection;
+            a=next;
+            energy*=1-reflection*reflection;
+            if(energy<r[0]*1e-10)return 0;
+        }
+        double last=0, mid=0;
+        for(int freq=200;freq<=1250;freq+=10){
+            double re=1,im=0;
+            double omega=2*Math.PI*freq/SAMPLE_RATE;
+            for(int k=1;k<=p;k++){
+                re+=a[k]*Math.cos(omega*k);
+                im-=a[k]*Math.sin(omega*k);
+            }
+            double amp=1/(re*re+im*im+1e-12);
+            // Prefer the first convincing peak, not necessarily the largest one.
+            if(freq>=280 && freq<=1100 && mid>last && mid>amp){
+                double prominence=mid/Math.max(Math.min(last,amp),1e-12);
+                if(prominence>1.003)return freq-10;
+            }
+            last=mid;mid=amp;
+        }
+        return 0;
     }
 
     private void stopMic() {
